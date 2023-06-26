@@ -56,7 +56,8 @@ def jsonsum_crc32(j, sum=0):
 def normalize_number(n):
     if n == 0:
         return '0e0'
-    with decimal.localcontext(prec=decimal.MAX_PREC) as ctx:
+    with decimal.localcontext() as ctx:
+        ctx.prec = decimal.MAX_PREC
         d = decimal.Decimal(n).as_tuple()
         digits = ''.join(str(digit) for digit in d.digits) # n is now a string of digits, without decimal point but may have trailing zeros
         stripped_digits = digits.rstrip('0')
