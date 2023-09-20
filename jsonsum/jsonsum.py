@@ -1,6 +1,7 @@
 import decimal
+import hashlib
 import json
-from zlib import crc32
+from typing import Any, Callable, Optional, Protocol
 
 type_null = b'n'
 type_true = b't'
@@ -11,47 +12,60 @@ type_object = b'o'
 type_array_start = b'['
 type_array_end = b']'
 
-def crc32_to_bytes(s):
-    return s.to_bytes(length=4, byteorder='big', signed=False)
+class Hasher(Protocol):
+    def update(self, data: bytes) -> None: ...
+    def digest(self) -> bytes: ...
 
-def jsonsum_crc32(j, sum=0):
+def jsonsum_sha256(j: Any) -> Hasher:
+    hash_factory = hashlib.sha256
+    sum = hash_factory()
+    jsonsum(j, sum, hash_factory)
+    return sum
+
+def jsonsum(j: Any, sum: Hasher, hash_factory: Callable[[Optional[bytes]], Hasher]) -> None:
     if j is None:
-        return crc32(type_null, sum)
+        sum.update(type_null)
     elif j is True: # must come before isinstance(j, int) because that is also true for bools
-        return crc32(type_true, sum)
+        sum.update(type_true)
     elif j is False:
-        return crc32(type_false, sum)
+        sum.update(type_false)
     elif isinstance(j, dict):
-        sum = crc32(type_object, sum)
-        obj_sum = 0
+        sum.update(type_object)
+        obj_sum = b'\x00' * sum.digest_size
         seen = set()
         for k, v in j.items():
             if k in seen:
                 # can't really happen with dicts
                 raise ValueError("duplicate key")
             seen.add(k)
-            item_sum = jsonsum_crc32(k)
-            item_sum = jsonsum_crc32(v, item_sum)
-            obj_sum ^= item_sum
-        return crc32(crc32_to_bytes(obj_sum), sum)
+            item_sum = hash_factory()
+            jsonsum(k, item_sum, hash_factory)
+            jsonsum(v, item_sum, hash_factory)
+            obj_sum = xor(obj_sum, item_sum.digest())
+        sum.update(obj_sum)
     elif isinstance(j, list):
-        sum = crc32(type_array_start, sum)
+        sum.update(type_array_start)
         for v in j:
-            sum = jsonsum_crc32(v, sum)
-        return crc32(type_array_end, sum)
+            jsonsum(v, sum, hash_factory)
+        sum.update(type_array_end)
     elif isinstance(j, str):
-        sum = crc32(type_string, sum)
-        j = crc32_to_bytes(crc32(j.encode()))
-        return crc32(j, sum)
+        sum.update(type_string)
+        j = hash_factory(j.encode()).digest()
+        sum.update(j)
     elif isinstance(j, bytes):
-        sum = crc32(type_string, sum)
-        j = crc32_to_bytes(crc32(j))
-        return crc32(j, sum)
+        sum = sum.update(type_string)
+        j = hash_factory(j).digest()
+        sum.update(j)
     elif isinstance(j, (int, float)):
-        sum = crc32(type_number, sum)
-        return crc32(normalize_number(j).encode(), sum)
+        sum.update(type_number)
+        sum.update(normalize_number(j).encode())
     else:
         raise ValueError("unsupported type")
+
+
+def xor(a: bytes, b: bytes) -> bytes:
+    return bytes(ab ^ bb for ab, bb in zip(a, b))
+
 
 def normalize_number(n):
     if n == 0:

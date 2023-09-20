@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 import json
-from jsonsum import jsonsum_crc32
+from jsonsum import jsonsum_sha256
 import pytest
 
 with open('testdata.json', 'r') as f:
-    testdata = json.load(f)
+    testdata = [[t['name'], t['inputs'], t['sha256']] for t in json.load(f)]
 
-@pytest.mark.parametrize(['name', 'jsons', 'expected'], testdata)  
-def test_testdata(name, jsons, expected):  
-    for j in jsons:
+@pytest.mark.parametrize(['name', 'inputs', 'sha256'], testdata)  
+def test_testdata(name, inputs, sha256):  
+    for j in inputs:
         j = json.loads(j)
-        assert jsonsum_crc32(j) == expected
+        assert jsonsum_sha256(j).hexdigest() == sha256
